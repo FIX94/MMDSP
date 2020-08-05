@@ -56,6 +56,7 @@ MCDRV_ENTRY:
 MC_BUF		.ds.l	1
 MC_KEYONBUF	.ds.l	1
 MC_KEYONOFST	.ds.w	1
+MC_STOPCOND .ds.b   1
 		.text
 
 
@@ -453,6 +454,8 @@ MCDRV_INIT:
 		move.l	d0,MC_BUF(a6)
 		movea.l	d0,a0
 
+		clr.b   MC_STOPCOND(a6)
+
 		clr.l	TRACK_ENABLE(a6)
 		move.w	#202,CYCLETIM(a6)
 		move.w	#77,TITLELEN(a6)
@@ -487,15 +490,23 @@ MCDRV_SYSSTAT:
 		move.w	d0,SYS_TEMPO(a6)	*テンポ
 
 		movea.l	MC_BUF(a6),a0
-		move.w	PAUSEMARK(a0),d1
-		tst.b	d1
-		sne	d0			*演奏終了フラグ
-		ext.w	d0
-		move.w	d0,PLAYEND_FLAG(a6)
-		andi.w	#$ff00,d1
-		seq	d0			*演奏中フラグ
-		ext.w	d0
-		move.w	d0,PLAY_FLAG(a6)
+		move.w -128(a0),d0
+		tst.w d0 *see if we are stopped
+		bne MCDRV_sysstat20
+MCDRV_sysstat10:
+		moveq #1, d1 *stopped
+		bra MCDRV_sysstat30
+MCDRV_sysstat20:
+		moveq #0, d1 *not stopped
+		andi.w #2, d0 *get playing or paused bit
+		move.w d0, PLAY_FLAG(a6) *store bit
+		bne MCDRV_sysstat30 *jump to end if playing
+		tst.b MC_STOPCOND(a6) *paused, see if we are fading out
+		beq MCDRV_sysstat30 *jump to end if not fading out
+		bsr	MCDRV_STOP *paused after fadeout, now end it
+		moveq #1, d1 *stopped
+MCDRV_sysstat30:
+		move.w d1, PLAYEND_FLAG(a6)
 
 		movem.l	(sp)+,d0/a0
 		rts
@@ -765,8 +776,10 @@ ext_buf:	.dc.b	_MDX,'MDX'
 		.dc.b	_SMF,'SMF'
 		.dc.b	_ZMS,'ZMS'
 		.dc.b	_OPM,'OPM'
+		.dc.b	_MDZ,'MDZ'
 		.dc.b	_ZDF,'ZDF'
 		.dc.b	_MDF,'MDF'
+		.dc.b	_MDC,'MDC'
 
 		.dc.b	0
 		.even
@@ -781,6 +794,7 @@ ext_buf:	.dc.b	_MDX,'MDX'
 
 MCDRV_FLOADP:
 		move.l	a1,-(sp)
+		clr.b	MC_STOPCOND(a6) * loading new file, clear this
 		cmpi.b	#_MDX,d0
 		beq	floadp_mdx
 		cmpi.b	#_MDR,d0
@@ -793,6 +807,8 @@ MCDRV_FLOADP:
 		beq	floadp_zms
 		cmpi.b	#_OPM,d0
 		beq	floadp_zms
+		cmpi.b	#_MDZ,d0
+		beq	floadp_mdz
 		cmpi.b	#_MID,d0
 		beq	floadp_smf
 		cmpi.b	#_STD,d0
@@ -804,6 +820,8 @@ MCDRV_FLOADP:
 		cmpi.b	#_ZDF,d0
 		beq	floadp_mmcp
 		cmpi.b	#_MDF,d0
+		beq	floadp_mmcp
+		cmpi.b	#_MDC,d0
 		beq	floadp_mmcp
 
 		move.l	(sp)+,a1
@@ -830,6 +848,11 @@ floadp_zms:
 		bsr	CALL_PLAYER
 		bra	floadp90
 
+floadp_mdz:
+		lea	mdz2mdc_name(pc),a0
+		bsr	CALL_PLAYER
+		bra	floadp90
+
 floadp_mmcp:
 		lea	mmcp_name(pc),a0
 		bsr	CALL_PLAYER
@@ -847,6 +870,7 @@ mdx2mdc_name:	.dc.b	'MDX2MDC.R',0
 rcp2mdc_name:	.dc.b	'RCP2MDC.R',0
 smf2mdc_name:	.dc.b	'SMF2MDC.R',0
 zms2mdc_name:	.dc.b	'ZMS2MDC.R',0
+mdz2mdc_name:	.dc.b	'MDZ2MDC.R',0
 mmcp_name:	.dc.b	'MMCP.R',0
 		.even
 
@@ -856,6 +880,7 @@ mmcp_name:	.dc.b	'MMCP.R',0
 *==================================================
 
 MCDRV_PLAY:
+		clr.b	MC_STOPCOND(a6)
 		MCDRV	_STOPMUSIC
 		MCDRV	_PLAYMUSIC
 		rts
@@ -884,6 +909,7 @@ MCDRV_CONT:
 *==================================================
 
 MCDRV_STOP:
+		clr.b	MC_STOPCOND(a6)
 		MCDRV	_STOPMUSIC
 		rts
 
@@ -895,6 +921,7 @@ MCDRV_STOP:
 MCDRV_FADEOUT:
 		move.l	d1,-(sp)
 		moveq	#10,d1
+		move.b  d1,MC_STOPCOND(a6)
 		MCDRV	_FADEOUT
 		move.l	(sp)+,d1
 		rts

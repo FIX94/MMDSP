@@ -1020,7 +1020,7 @@ title_jmp:
 		.dc.w	title_mdf-title_jmp	*20:ZDF
 		.dc.w	title_non-title_jmp	*21:MM2
 		.dc.w	title_non-title_jmp	*22:MMC
-		.dc.w	title_non-title_jmp	*23:MDC
+		.dc.w	title_mdc-title_jmp	*23:MDC
 		.dc.w	title_pic-title_jmp	*PIC
 		.dc.w	title_mag-title_jmp	*MAG
 		.dc.w	title_pi-title_jmp	*PI
@@ -1513,6 +1513,26 @@ title_jpg23:
 title_jpg24:
 		dbra	d1,title_jpg23
 title_jpg90:
+		clr.b	(a1)
+		rts
+
+*----------------------------------------
+title_mdc:
+		lea	FILE_BUFF(a6),a0
+		adda.l	FILE_BUFF+20(a6),a0
+		moveq	#72-1,d1
+title_mdc10:
+		move.b	(a0)+,d0
+		beq	title_mdc20			*$00,$0D,$0A,$1AÇ≈èIóπ
+		cmpi.b	#$0D,d0
+		beq	title_mdc20
+		cmpi.b	#$0A,d0
+		beq	title_mdc20
+		cmpi.b	#$1A,d0
+		beq	title_mdc20
+		move.b	d0,(a1)+
+		dbra	d1,title_mdc10
+title_mdc20:
 		clr.b	(a1)
 		rts
 
